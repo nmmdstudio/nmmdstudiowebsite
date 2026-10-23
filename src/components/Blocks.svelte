@@ -1,6 +1,8 @@
 <script lang="ts">
   import { untrack } from 'svelte';
 
+  import { springEase } from '../lib/spring';
+
   /*
    * The homepage is a fixed column of frosted blocks that change size as the page
    * is scrolled.
@@ -298,11 +300,14 @@
   /*
    * Easing for the bubble-up entrance.
    *
-   * The control points overshoot past 1, so each block decelerates into its seat
-   * and briefly carries on past before settling back. That overshoot is what
-   * separates a bubble from a slide.
+   * A spring (see lib/spring.ts) carrying the same launch and the same 5%
+   * overshoot as the back-ease it replaces, with the peak brought forward a
+   * touch so the settle has room for a small ring-down: each block decelerates
+   * into its seat, carries on past, and settles with a faint second touch
+   * rather than snapping back. That overshoot is what separates a bubble from
+   * a slide; the ring is what separates a bubble from a bezier.
    */
-  const RISE_EASE = 'cubic-bezier(0.34, 1.4, 0.64, 1)';
+  const RISE_EASE = springEase('cubic-bezier(0.34, 1.4, 0.64, 1)', 0.52);
 
   /*
    * How long a block takes to move between two heights, and the curve it follows.
@@ -311,12 +316,14 @@
    * 300px while its neighbour loses it. A single easing has to serve both without
    * either looking like it stopped and started.
    *
-   * The second control point sits above 1, so the curve carries past its target
-   * and comes back onto it. That back-ease is the bounce: a block inflates past
-   * the height it is settling at, then eases down onto it, the way a balloon does
-   * when you stop blowing into it. The x control points are the same long settle
-   * that was here before the bounce, so the front of the curve launches exactly
-   * as it did; only the tail now overshoots.
+   * The curve is a spring (see lib/spring.ts), solved to carry the same launch
+   * and the same 5.3% overshoot as the back-ease that was here before, and to
+   * land its peak at the same moment. That overshoot is the bounce: a block
+   * inflates past the height it is settling at, then rings down onto it, the
+   * way a balloon does when you stop blowing into it. Only the character
+   * differs from the old bezier: the reversal at the peak is round and the
+   * settle decays exponentially instead of snapping back, which is what reads
+   * as fluid.
    *
    * Everything in a step shares this one curve — the block's height, the radius
    * that rides with it, the stack around it and the row underneath — which is
@@ -328,20 +335,19 @@
    *
    * The overshoot is bounded by the shortest thing it has to fit around. A strip
    * collapsing from 36.5svh to a 4.6svh tab travels 31.9svh, and the overshoot is
-   * a fraction of that travel, so too steep a curve carries the tab below its
-   * resting height and down to a sliver, clipping its title on the way back. 1.40
-   * tops out at 5.3%, which leaves a collapsing tab at 2.9svh — over the 2.6svh
-   * its 24px title needs, but only just. 1.45 bottoms the same tab out at 2.5svh
-   * and clips, and the classic back-ease (1.56, ~10%) drops it to 16px.
+   * a fraction of that travel, so too lively a curve carries the tab below its
+   * resting height and down to a sliver, clipping its title on the way back. The
+   * fitted 5.3% leaves a collapsing tab at 2.9svh — over the 2.6svh its 24px
+   * title needs, but only just. A touch more overshoot bottoms the same tab out
+   * at 2.5svh and clips, and the classic back-ease (~10%) drops it to 16px.
    *
-   * The whole morph is deliberately brisk: the x control points still front-load
-   * the travel exactly as they did when this was a plain long settle, so the
-   * launch is unchanged and only the tail now overshoots. Shortening the duration
-   * from 1.2s to 0.6s is what turns that tail from a float into a bounce — the
-   * amplitude is the same and the reversal is twice as quick.
+   * The whole morph is deliberately brisk: the launch is the same long settle's
+   * front-loaded start, so the travel leaves as it always did. Shortening the
+   * duration from 1.2s to 0.6s is what turns the tail from a float into a
+   * bounce — the amplitude is the same and the reversal is twice as quick.
    */
   const MORPH_DURATION = 0.6;
-  const MORPH_EASE = 'cubic-bezier(0.22, 1.40, 0.36, 1)';
+  const MORPH_EASE = springEase('cubic-bezier(0.22, 1.40, 0.36, 1)');
 
   /*
    * The small row gets its own curve, and its overshoot is allowed to be larger.
@@ -351,16 +357,24 @@
    * column's own height FALLS as the overshoot rises: it measures 85.0 − 2.3·v.
    * The stack's curve is bounded by the strip that collapses beside it, but the
    * row carries no strip and can overshoot freely — as long as its overshoot
-   * does not land early, while the stack is still tall. So this curve is
-   * back-loaded: a steep 1.60 overshoot on x control points well past the middle,
-   * which pushes the pop to the far end of the morph where the stack has already
+   * does not land early, while the stack is still tall. So the spring fitted to
+   * the row keeps the pop exactly where the back-ease put it, 61% of the way
+   * through the morph — the far end of the curve, where the stack has already
    * settled and the column is 2.3svh short of its ceiling.
    *
-   * A front-loaded curve with the same overshoot peaks at a tenth of the way in,
-   * while the stack is still near its full height, and the two overshoots add up
-   * past the body.
+   * A livelier curve with the same overshoot peaks a tenth of the way in, while
+   * the stack is still near its full height, and the two overshoots add up past
+   * the body.
    */
-  const ROW_EASE = 'cubic-bezier(0.40, 1.60, 0.70, 1)';
+  const ROW_EASE = springEase('cubic-bezier(0.40, 1.60, 0.70, 1)');
+
+  /*
+   * The closing wordmark's bubble: the liveliest curve on the page. Its 16%
+   * overshoot is kept — the mark still inflates to 8% past its size — but the
+   * peak is brought forward from the back-ease's 37% to 32%, leaving the settle
+   * room for the small ring-down after the pop.
+   */
+  const END_EASE = springEase('cubic-bezier(0.2, 1.75, 0.35, 1)', 0.32);
 
 
   const BLOCKS = [
@@ -470,8 +484,8 @@
    * amount — it is measured live against the room actually available, which is
    * what keeps the top of the runway from shaving the glass off its own edges.
    */
-  const BOUNCE_PRESS = 0.2;
-  const BOUNCE_PERIOD = 0.42;
+  const BOUNCE_PRESS = 0.24;
+  const BOUNCE_PERIOD = 0.5;
 
   /** How far the squash presses in, and how far the spring aims past it. */
   const BOUNCE_SQUASH = 0.93;
@@ -773,8 +787,8 @@
    * cap the column — the button is fixed over the page, nothing clips it, so
    * the amplitudes can be as deep as a press wants to be.
    */
-  const BUTTON_PRESS_TIME = 0.09;
-  const BUTTON_PERIOD = 0.22;
+  const BUTTON_PRESS_TIME = 0.1;
+  const BUTTON_PERIOD = 0.26;
 
   /** How deep the press sinks it, and how far past rest the release carries, per axis. */
   const BUTTON_DIP = { x: 0.1, y: 0.16 };
@@ -1034,6 +1048,7 @@
     --morph-duration: {MORPH_DURATION}s;
     --morph-ease: {MORPH_EASE};
     --row-ease: {ROW_EASE};
+    --end-mark-ease: {END_EASE};
     --stack-height: {svh(stackHeightFor(step))};
     --device: {device};
   "
@@ -1983,9 +1998,9 @@
    * consume height at every stage and push the column up, and it is only ever
    * wanted at the last one.
    *
-   * The bubble is a back-eased transform rather than a keyframe animation, so it
-   * plays in reverse on the way out — leaving the last stage folds the wordmark
-   * back down instead of dropping it.
+   * The bubble is a spring-eased transform (see END_EASE) rather than a keyframe
+   * animation, so it plays in reverse on the way out — leaving the last stage
+   * folds the wordmark back down instead of dropping it.
    *
    * The start is deliberately far from rest. A bezier's overshoot is a fraction
    * of the distance travelled, not of the resting value, so a scale that only
@@ -2024,7 +2039,7 @@
 
     transition:
       opacity 0.35s ease-out,
-      transform 0.7s cubic-bezier(0.2, 1.75, 0.35, 1);
+      transform 0.7s var(--end-mark-ease);
   }
 
   .end-mark--in {

@@ -1,6 +1,8 @@
 <script lang="ts">
   import { LETTERS, measureTracks } from '../lib/wordmark';
 
+  import { springEase } from '../lib/spring';
+
   /*
    * The logo is hidden until the landing page has left.
    *
@@ -23,14 +25,15 @@
    * each pushing the letters after it across. The word resolves and then folds
    * back up when the cursor leaves.
    *
-   * Only the curve changes. The landing's settles; this one has its second
-   * control point above 1, so every letter carries past the width it is heading
-   * for and eases back onto it. The word inflates past its full width and
-   * settles, which is what turns the resolve into a bounce rather than an unfold.
+   * Only the curve changes. The landing's settles; this one is a spring (see
+   * lib/spring.ts) carrying the same 14% overshoot the back-ease had, with the
+   * peak brought forward a touch so each letter settles with a small
+   * ring-down. The word inflates past its full width and rings back onto it,
+   * which is what turns the resolve into a bounce rather than an unfold.
    */
   const LETTER_DURATION = 0.55;
   const LETTER_STAGGER = 0.06;
-  const LETTER_EASE = 'cubic-bezier(0.22, 1.7, 0.36, 1)';
+  const LETTER_EASE = springEase('cubic-bezier(0.22, 1.7, 0.36, 1)', 0.34);
 
   /** Track widths read from the off-screen copy, once the font has loaded. */
   let track = $state<Record<number, number>>({});
